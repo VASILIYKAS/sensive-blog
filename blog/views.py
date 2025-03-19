@@ -29,8 +29,9 @@ def serialize_tag(tag):
 
 
 def index(request):
-
-    all_posts = Post.objects.annotate(likes_count=Count('likes'))
+    all_posts = Post.objects.prefetch_related('author').annotate(
+        likes_count=Count('likes')
+    )
     popular_posts = all_posts.order_by('-likes_count')
     most_popular_posts = popular_posts[:5]
 
