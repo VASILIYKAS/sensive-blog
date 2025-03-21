@@ -12,10 +12,36 @@ class PostQuerySet(models.QuerySet):
         )
         return posts_at_year
 
+    def popular(self):
+        popular_post = self.prefetch_related('author').annotate(
+            likes_count=Count('likes', distinct=True))
+        sorted_popular_post = popular_post.order_by('-likes_count')
+        return sorted_popular_post
+
+    def fetch_with_comments_count(self):
+        """
+        Добавляет количество комментариев к каждому посту в queryset.
+
+        Преимущества перед обычным annotate:
+        1. Делает код чище.
+        2. Метод можно использовать в разных частях приложения.
+        3. Подгружает авторов, избегая избыточного количества запросов к базе данных.
+
+        Использовать в ситуациях когда:
+        - Нужно добавить количество комментариев к постам.
+        - Требуется подгрузить авторов постов для дальнейшего использования.
+        - Хочется избежать дублирования кода с annotate и prefetch_related.
+        """
+        posts_with_comments = self.prefetch_related('author').annotate(
+            comments_count=Count('comments', distinct=True)
+        )
+        return posts_with_comments
+
 
 class TagQuerySet(models.QuerySet):
     def popular(self):
-        popular_tags = self.annotate(tags_count=Count('posts')).order_by('-tags_count')
+        popular_tags = self.annotate(
+            tags_count=Count('posts')).order_by('-tags_count')
         return popular_tags
 
 
