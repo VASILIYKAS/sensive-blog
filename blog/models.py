@@ -1,7 +1,7 @@
 from django.db import models
 from django.urls import reverse
 from django.contrib.auth.models import User
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 
 
 class PostQuerySet(models.QuerySet):
@@ -13,12 +13,30 @@ class PostQuerySet(models.QuerySet):
         return posts_at_year
 
     def popular(self):
-        popular_post = (
-            self.prefetch_related('author', 'tags')
+        posts_with_likes = (
+            self.prefetch_related(
+                'author',
+                Prefetch('tags', queryset=Tag.objects.annotate(
+                    posts_count=Count('posts')
+                ))
+            )
             .annotate(likes_count=Count('likes', distinct=True))
+            .order_by('-likes_count')
         )
-        sorted_popular_post = popular_post.order_by('-likes_count')
-        return sorted_popular_post
+
+        post_ids = [post.id for post in posts_with_likes]
+
+        comments_counts = (
+            Post.objects.filter(id__in=post_ids)
+            .annotate(comments_count=Count('comments', distinct=True))
+            .values_list('id', 'comments_count')
+        )
+        comments_dict = dict(comments_counts)
+
+        for post in posts_with_likes:
+            post.comments_count = comments_dict.get(post.id, 0)
+
+        return posts_with_likes
 
     def fetch_with_comments_count(self):
         """
@@ -32,19 +50,38 @@ class PostQuerySet(models.QuerySet):
         Использовать в ситуациях когда:
         - Нужно добавить количество комментариев к постам.
         - Требуется подгрузить авторов постов для дальнейшего использования.
-        - Хочется избежать дублирования кода с annotate и prefetch_related.
+        - Хочется избежать дублирования кода с annotate и prefetch_related."
         """
-        posts_with_comments = self.prefetch_related('author').annotate(
-            comments_count=Count('comments', distinct=True)
+        posts_with_comments = self.prefetch_related(
+            'author',
+            Prefetch('tags', queryset=Tag.objects.annotate(
+                posts_count=Count('posts')
+            ))
         )
+
+        comments_counts = (
+            Post.objects.filter(id__in=[
+                post.id for post in posts_with_comments
+            ])
+            .annotate(comments_count=Count('comments', distinct=True))
+            .values_list('id', 'comments_count')
+        )
+        comments_dict = dict(comments_counts)
+
+        for post in posts_with_comments:
+            post.comments_count = comments_dict.get(post.id, 0)
+
         return posts_with_comments
 
 
 class TagQuerySet(models.QuerySet):
     def popular(self):
-        popular_tags = (
-            self.annotate(posts_count=Count('posts'))
-            .order_by('-posts_count')
+        annotated_posts = Post.objects.annotate(posts_count=Count('tags'))
+        popular_tags = self.prefetch_related(
+            Prefetch(
+                'posts', queryset=annotated_posts
+            )).annotate(posts_count=Count('posts')).order_by(
+            '-posts_count'
         )
         return popular_tags
 
