@@ -53,9 +53,11 @@ def post_detail(request, slug):
         Post.objects.filter(slug=slug)
         .prefetch_related(
             Prefetch('tags', queryset=Tag.objects.annotate(
-                posts_count=Count('posts')  # Добавляем аннотацию здесь
+                posts_count=Count('posts')
             )),
-            Prefetch('comments', queryset=Comment.objects.select_related('author')),
+            Prefetch('comments', queryset=Comment.objects.prefetch_related(
+                'author'
+            )),
             Prefetch('likes')
         )
         .annotate(
