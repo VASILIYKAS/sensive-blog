@@ -12,14 +12,21 @@ class PostQuerySet(models.QuerySet):
         )
         return posts_at_year
 
-    def popular(self):
-        posts_with_likes = (
-            self.prefetch_related(
-                'author',
+    def get_post_info(self):
+        post_info = (
+            self.select_related('author')
+            .prefetch_related(
                 Prefetch('tags', queryset=Tag.objects.annotate(
                     posts_count=Count('posts')
                 ))
             )
+        )
+
+        return post_info
+
+    def popular(self):
+        posts_with_likes = (
+            self.get_post_info()
             .annotate(likes_count=Count('likes', distinct=True))
             .order_by('-likes_count')
         )
@@ -52,12 +59,7 @@ class PostQuerySet(models.QuerySet):
         - Требуется подгрузить авторов постов для дальнейшего использования.
         - Хочется избежать дублирования кода с annotate и prefetch_related."
         """
-        posts_with_comments = self.prefetch_related(
-            'author',
-            Prefetch('tags', queryset=Tag.objects.annotate(
-                posts_count=Count('posts')
-            ))
-        )
+        posts_with_comments = self.get_post_info()
 
         comments_counts = (
             Post.objects.filter(id__in=[
@@ -73,17 +75,22 @@ class PostQuerySet(models.QuerySet):
 
         return posts_with_comments
 
+    def prefetch_tags_with_posts_count(self):
+        return self.prefetch_related(
+            Prefetch('tags', queryset=Tag.objects.with_posts_count())
+        )
+
 
 class TagQuerySet(models.QuerySet):
     def popular(self):
-        annotated_posts = Post.objects.annotate(posts_count=Count('tags'))
-        popular_tags = self.prefetch_related(
-            Prefetch(
-                'posts', queryset=annotated_posts
-            )).annotate(posts_count=Count('posts')).order_by(
-            '-posts_count'
+        popular_tags = (
+            self.annotate(posts_count=Count('posts'))
+            .order_by('-posts_count')
         )
         return popular_tags
+
+    def with_posts_count(self):
+        return self.annotate(posts_count=Count('posts'))
 
 
 class Post(models.Model):
@@ -125,6 +132,8 @@ class Post(models.Model):
 class Tag(models.Model):
     title = models.CharField('Тег', max_length=20, unique=True)
 
+    objects = TagQuerySet.as_manager()
+
     def __str__(self):
         return self.title
 
@@ -138,8 +147,6 @@ class Tag(models.Model):
         ordering = ['title']
         verbose_name = 'тег'
         verbose_name_plural = 'теги'
-
-    objects = TagQuerySet.as_manager()
 
 
 class Comment(models.Model):
